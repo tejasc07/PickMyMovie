@@ -13,6 +13,7 @@ movies = pd.DataFrame(movies_dict)
 
 similarity = pickle.load(open('similarity.pkl', 'rb')) 
 
+# fetching poster using id
 def fetch_poster(movie_id):
     url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={API_KEY}"
     
@@ -27,62 +28,90 @@ def fetch_poster(movie_id):
     except:
         return "https://via.placeholder.com/500x750?text=Error"
 
+# fetching details using id
+def fetch_details(movie_id):
+    try:
+        url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={API_KEY}"
+        data = requests.get(url).json()
 
+        rating = data.get('vote_average', 'N/A')
+        overview = data.get('overview', 'No description available')
+
+        return rating, overview
+    except:
+        return "N/A", "Error fetching overview"
+
+# fetching trailer
+def fetch_trailer(movie_id):
+    try:
+        url = f"https://api.themoviedb.org/3/movie/{movie_id}/videos?api_key={API_KEY}"
+        data = requests.get(url).json()
+
+        for video in data.get('results', []):
+            if video['type'] == 'Trailer' and video['site'] == "YouTube":
+                return f"https://www.youtube.com/watch?v={video['key']}"
+            
+        return None
+    except:
+        return None
+
+# main recommend function
 def recommend(movie, n):
-    if movie not in movies['title'].values:
-        return [], []
+    try:
+        if movie not in movies['title'].values:
+            return [], [], [], [], [], []
 
-    idx = movies[movies['title'] == movie].index[0]
-    dist = similarity[idx]
+        idx = movies[movies['title'] == movie].index[0]
+        dist = similarity[idx]
 
-    movies_list = sorted(
-        list(enumerate(dist)),
-        reverse=True,
-        key=lambda x: x[1]
-    )[1:n+1]
+        movies_list = sorted(
+            list(enumerate(dist)),
+            reverse=True,
+            key=lambda x: x[1]
+        )[1:n+1]
 
-    names = []
-    posters = []
+        names, posters, ratings, overviews, trailers, scores = [], [], [], [], [], []
 
-    for i in movies_list:
-        movie_id = movies.iloc[i[0]].movie_id
-        
-        names.append(movies.iloc[i[0]].title)
-        posters.append(fetch_poster(movie_id))
+        for i in movies_list:
+            movie_id = movies.iloc[i[0]].movie_id
+            
+            names.append(movies.iloc[i[0]].title)
+            posters.append(fetch_poster(movie_id))
 
-    return names, posters
+            rating, overview = fetch_details(movie_id)
+            ratings.append(rating)
+            overviews.append(overview)
 
-#ui
-st.set_page_config(page_title="PickMyMovie", page_icon="🎥", layout="centered")
+            trailers.append(fetch_trailer(movie_id))
+            scores.append(round(i[1]*100, 2))
 
-# Custom CSS
+        return names, posters, ratings, overviews, trailers, scores
+    
+    except:
+        return [], [], [], [], [], []
+
+#------------------------------------------UI---------------------------------------------------#
+st.set_page_config(page_title="PickMyMovie", page_icon="🎥", layout="wide")
+
 st.markdown("""
     <style>
     .title {
         font-size: 40px;
         font-weight: bold;
         color: #FF4B4B;
+        text-align: center;
     }
     .subtitle {
         text-align: center;
-        font-size: 18px;
+        font-size: 15px;
         color: gray;
         margin-bottom: 30px;
-    }
-    div.stButton > button {
-        width: 100%;
-        background-color: #FF4B4B;
-        color: white;
-        font-size: 18px;
-        border-radius: 10px;
-        padding: 10px;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# Title
 st.markdown('<div class="title">PickMyMovie 🎬</div>', unsafe_allow_html=True)
-st.write('Find movies youll love in seconds')
+st.markdown('<div class="subtitle">Find movies youll love in seconds<div/>', unsafe_allow_html=True)
 st.write("")
 
 selected_movie = st.selectbox(
@@ -95,26 +124,51 @@ st.write("")
 num_movies = st.slider(
     "Pick your movie count",
     min_value=1,
-    max_value=8,
-    value=4
+    max_value=10,
+    value=5
 )
 
 st.write("")
 
 if st.button("Recommend ✨"):
-    with st.spinner("Finding best recommendations..."):
-        names, posters = recommend(selected_movie, num_movies)
+    with st.spinner("picking the best ones..."):
+        names, posters, ratings, overviews, trailers, scores = recommend(selected_movie, num_movies)
 
     if not names:
         st.error("Movie not found")
     else:
-        cols_per_row = 4 
+        st.session_state["results"] = (names, posters, ratings, overviews, trailers, scores)
 
-        for i in range(0, len(names), cols_per_row):
-            cols = st.columns(cols_per_row)
+st.write("")
 
-            for j in range(cols_per_row):
-                if i + j < len(names):
-                    with cols[j]:
-                        st.image(posters[i + j])
-                        st.caption(names[i + j])
+if "results" in st.session_state:
+    names, posters, ratings, overviews, trailers, scores = st.session_state["results"]
+else:
+    names, posters, ratings, overviews, trailers, scores = [], [], [], [], [], []
+
+if "results" in st.session_state:
+    names, posters, ratings, overviews, trailers, scores = st.session_state["results"]
+
+    cols_per_row = 5
+
+    for i in range(0, len(names), cols_per_row):
+        cols = st.columns(cols_per_row)
+
+        for j in range(cols_per_row):
+            if i + j < len(names):
+                idx = i + j
+
+                with cols[j]:
+                    st.image(posters[idx])
+                    st.caption(names[idx])
+
+                    if st.button("more", key=f"btn_{idx}"):
+                        st.session_state["movie_data"] = {
+                            "name": names[idx],
+                            "poster": posters[idx],
+                            "rating": ratings[idx],
+                            "overview": overviews[idx],
+                            "trailer": trailers[idx],
+                            "score": scores[idx]
+                        }
+                        st.switch_page("pages/details.py")
