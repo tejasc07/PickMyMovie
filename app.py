@@ -11,7 +11,7 @@ API_KEY = os.getenv("TMDB_API_KEY")
 movies_dict = pickle.load(open('movies_dict.pkl', 'rb'))
 movies = pd.DataFrame(movies_dict)
 
-similarity = pickle.load(open('similarity.pkl', 'rb')) 
+similarity = pickle.load(open('similarity_small.pkl', 'rb'))
 
 # fetching poster using id
 def fetch_poster(movie_id):
@@ -62,20 +62,19 @@ def recommend(movie, n):
             return [], [], [], [], [], []
 
         idx = movies[movies['title'] == movie].index[0]
-        dist = similarity[idx]
 
-        movies_list = sorted(
-            list(enumerate(dist)),
-            reverse=True,
-            key=lambda x: x[1]
-        )[1:n+1]
+        # 🔥 get top similar movies directly
+        top_movies = similarity[idx][:n]
 
         names, posters, ratings, overviews, trailers, scores = [], [], [], [], [], []
 
-        for i in movies_list:
-            movie_id = movies.iloc[i[0]].movie_id
-            
-            names.append(movies.iloc[i[0]].title)
+        for i in top_movies:
+            movie_index = i[0]
+            score = i[1]
+
+            movie_id = movies.iloc[movie_index].movie_id
+
+            names.append(movies.iloc[movie_index].title)
             posters.append(fetch_poster(movie_id))
 
             rating, overview = fetch_details(movie_id)
@@ -83,11 +82,12 @@ def recommend(movie, n):
             overviews.append(overview)
 
             trailers.append(fetch_trailer(movie_id))
-            scores.append(round(i[1]*100, 2))
+            scores.append(round(score * 100, 2))
 
         return names, posters, ratings, overviews, trailers, scores
-    
-    except:
+
+    except Exception as e:
+        st.error(f"Error: {e}")
         return [], [], [], [], [], []
 
 #------------------------------------------UI---------------------------------------------------#
