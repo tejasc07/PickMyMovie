@@ -2,3 +2,4 @@ myenv/
 .env
 __pycache__/
 *.pkl
+data/
